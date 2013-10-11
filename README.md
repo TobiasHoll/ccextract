@@ -5,4 +5,4 @@ Extract Contacts from Apple iPhone / iPod backups made via iTunes to vCard forma
 
 ---
 
-_The `bin` directory currently contains binaries for win64 (created with [`cx_Freeze`](http://cx-freeze.sourceforge.net/)) plus the matching `setup.py` file._
+_Binaries for windows can be found in the "[Releases](https://github.com/hlt-dev/ccextract/releases)" section of this page._
