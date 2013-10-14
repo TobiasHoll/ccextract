@@ -1,0 +1,12 @@
+===================
+==   CHANGELOG   ==
+==   ccextract   ==
+===================
+
+1.0.1
+    - Added error handling if no backup is found
+    - -b/--backup option is now required if the default backup path is unknown
+        for your operating system
+
+1.0
+    - Initial release

@@ -7,8 +7,6 @@
 #  File 31bb7ba8914766d4ba40d6dfb6113c8b614be442 contains all contact information
 #  as a sqlite3 database
 
-
-
 import argparse
 import datetime
 import os
@@ -104,16 +102,21 @@ def write(level, message):
 def find_newest(path):
     objs = [os.path.join(path, x) for x in os.listdir(path)]
     dirs = sorted([(x, os.path.getmtime(x)) for x in objs if os.path.isdir(x)], key=lambda pair: pair[1], reverse=True)
-    return dirs[0][0]
+    try:
+        return dirs[0][0]
+    except:
+        write(FATAL, "No backups found.")
+        sys.exit(-1)
 
 def find_by_name(path, name):
-    objs = [os.path.join(path, x) for x in os.listdir(path)]
-    dirs = [x for x in objs if os.path.isdir(x)]
+    objs = [os.path.abspath(os.path.join(path, x)) for x in os.listdir(path)]
+    dirs = sorted([x for x in objs if os.path.isdir(x)], key=lambda x: os.path.getmtime(x), reverse=True) # sort to get newest backup of that device
     for d in dirs:
         head = plistlib.readPlist(os.path.join(d, "Info.plist"))
         if (head["Device Name"] == name or head["Display Name"] == name):
             return d
-    return None
+    write(FATAL, "No backup found for device '%s'" % name)
+    sys.exit(-1)
 
 
 if ("darwin" in sys.platform.lower()):
@@ -121,11 +124,13 @@ if ("darwin" in sys.platform.lower()):
 elif ("win" in sys.platform.lower()):
     DEFAULT_BACKUP_FOLDER = os.path.abspath(os.path.expandvars("%appdata%\\Apple Computer\\MobileSync\\Backup"))
 else:
-    DEFAULT_BACKUP_FOLDER = "not set"
+    require_backup_dir = True
+    write(ERROR, "Could not detect backup folder - please use the '-b'/'--backup' option")
+    DEFAULT_BACKUP_FOLDER = "?"
 
 p = argparse.ArgumentParser(description="Converts contact data from Apple iOS backups (via iTunes) to vCard format")
 p.add_argument("-o", "--output", help="Output folder", action="store", metavar="FOLDER", required=True)
-p.add_argument("-b", "--backup", help="iTunes backup folder (default: " + DEFAULT_BACKUP_FOLDER + ")", action="store", metavar="FOLDER", default=DEFAULT_BACKUP_FOLDER)
+p.add_argument("-b", "--backup", help="iTunes backup folder (default: " + DEFAULT_BACKUP_FOLDER + ")", action="store", metavar="FOLDER", default=DEFAULT_BACKUP_FOLDER, required=require_backup_dir)
 p.add_argument("-n", "--name", help="Device name (default: choose the most recent backup). Useful if you back up more than one device", action="store", metavar="NAME")
 p.add_argument("--plain", help="Plain logging (generally discouraged except for automated output processing)", action="store_true")
 p.add_argument("-l", "--loglevel", help="Log level. One of " + ", ".join(LEVELNAMES) + " (default: INFO)", action="store", metavar="LEVEL", choices=LEVELNAMES, type=lambda key: LEVELS[key], default="INFO")
