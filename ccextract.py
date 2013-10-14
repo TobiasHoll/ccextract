@@ -118,7 +118,7 @@ def find_by_name(path, name):
     write(FATAL, "No backup found for device '%s'" % name)
     sys.exit(-1)
 
-
+require_backup_dir = False
 if ("darwin" in sys.platform.lower()):
     DEFAULT_BACKUP_FOLDER = os.path.abspath(os.path.expanduser("~/Library/Application Support/MobileSync/Backup"))
 elif ("win" in sys.platform.lower()):

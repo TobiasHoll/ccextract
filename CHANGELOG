@@ -3,10 +3,13 @@
 ==   ccextract   ==
 ===================
 
-1.0.1
+1.0.2                                                               (14.10.2013)
+    - Fixed bug when -b/--backup was not required
+
+1.0.1                                                               (14.10.2013)
     - Added error handling if no backup is found
     - -b/--backup option is now required if the default backup path is unknown
         for your operating system
 
-1.0
+1.0                                                                 (11.10.2013)
     - Initial release
