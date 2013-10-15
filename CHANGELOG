@@ -10,7 +10,6 @@
     - Bugfix regarding -l/--loglevel options (it would previously fail)
     - Bugfix regarding the SQL queries (errors would occur, if there were many
         entries or entries with many items (e.g. phone numbers))
-    
 
 1.0.2                                                               (14.10.2013)
     - Fixed bug when -b/--backup was not required
