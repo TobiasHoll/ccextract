@@ -1,7 +1,16 @@
-===================
-==   CHANGELOG   ==
-==   ccextract   ==
-===================
+                                   CHANGELOG                                   
+
+1.1                                                                 (15.10.2013)
+    - Now uses more detailed information (e.g. whether a phone number is a
+        mobile number or for a fax machine) from the ABMultiValue tables. This
+        also allows distinguishing different parts of an address.
+    - Now supports more information, such as
+      - other anniversaries / dates except birthdays
+      - related people (e.g. parents)
+    - Bugfix regarding -l/--loglevel options (it would previously fail)
+    - Bugfix regarding the SQL queries (errors would occur, if there were many
+        entries or entries with many items (e.g. phone numbers))
+    
 
 1.0.2                                                               (14.10.2013)
     - Fixed bug when -b/--backup was not required

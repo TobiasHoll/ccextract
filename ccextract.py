@@ -15,64 +15,16 @@ import re
 import sqlite3 # Use the newest version possible -> this has to be a py3k tool
 import sys
 
-class Contact:
-    def __init__(s):
-        s.first_name = ""                                                       # ABPerson -> First
-        s.last_name = ""                                                        # ABPerson -> Last
-        s.middle_name = ""                                                      # ABPerson -> Middle
-        s.prefix = "" # Mr., Ms.                                                # ABPerson -> Prefix
-        s.suffix = "" # Dr., Dipl.-Ing.                                         # ABPerson -> Suffix
-        s.nickname = ""                                                         # ABPerson -> Nickname
-        s.birthday = ""                                                         # ABPerson -> Birthday
-        s.address = ""                                                          # ABPersonFullTextSearch_content -> c17Address
-        s.tel = ""                                                              # ABPersonFullTextSearch_content -> c15Phone
-        s.mail = ""                                                             # ABPersonFullTextSearch_content -> c16Email
-        s.im = ""                                                               # ABPersonFullTextSearch_content -> c21IM
-        s.title = ""                                                            # ABPerson -> JobTitle
-        s.org = ""                                                              # ABPerson -> Organization, ABPerson -> Department
-        s.note = ""                                                             # ABPerson -> Note
-        s.url = ""                                                              # ABPersonFullTextSearch_content -> c19URL
-    def vcard(s):
-        comma2semicolon = lambda x: ";".join(x.replace("\n", ",").split(","))
-        semicolon = lambda x: ";".join(x.split())
-        comma = lambda x: ",".join(x.split())
-        space = lambda x: " ".join(x.split(","))
-        lines = []
-        lines.append("BEGIN:VCARD") # Start vCard
-        lines.append("VERSION:4.0") # vCard version (4.0)
-        if (s.first_name or s.last_name or s.middle_name or s.prefix or s.suffix):
-            lines.append("N:%s;%s;%s;%s;%s" % (comma(s.last_name), comma(s.first_name), comma(s.middle_name), comma(s.prefix), comma(s.suffix))) # Name
-        lines.append("FN:%s" % " ".join( x for x in (space(s.prefix), space(s.suffix), space(s.first_name), space(s.middle_name), space(s.last_name)) if x )) # Formatted name
-        if (s.nickname):
-            lines.append("NICKNAME:%s" % s.nickname)
-        if (isinstance(s.birthday, (int, float))):
-            realdate = datetime.datetime.fromtimestamp(int(s.birthday)).date() # int is OK (birthday references 12pm)
-            lines.append("BDAY:%04d%02d%02d" % (realdate.year, realdate.month, realdate.day))
-        if (s.address):
-            lines.append("ADDR:LABEL=\"%s\";;;%s" % (s.address.replace("\n", ", ").replace("\"", "'"), comma2semicolon(s.address)))
-        if (s.tel):
-            for x in re.split("\D", s.tel):
-                if (x):
-                    lines.append("TEL:%s" % x)
-        if (s.mail):
-            for x in re.split("\s", s.mail):
-                if (x):
-                    lines.append("EMAIL:%s" % x)
-        if (s.im):
-            for x in re.split("\s", s.im):
-                if (x):
-                    lines.append("IMPP:%s" % x)
-        if (s.title):
-            lines.append("TITLE:%s" % s.title)
-        if (s.org):
-            lines.append("ORG:%s" % s.org)
-        if (s.note):
-            lines.append("NOTE:%s" % s.note)
-        if (s.url):
-            lines.append("URL:%s" % s.url)
-        return "\r\n".join(lines)
+# Version number
+VERSION = "1.1"
 
+# Constants
+
+EPOCH = datetime.datetime(2001, 1, 1, 0, 0, 0, 0) # Not UNIX, but some sort of Apple constant (??)
+
+# Logging
 # (loglevel, name, file descriptor, extra indent)
+DEBUG = (-1, "DEBUG", sys.stdout, 0)
 INFO = (0, "INFO", sys.stdout, 0)
 WARNING = (1, "WARNING", sys.stdout, 0)
 ERROR = (2, "ERROR", sys.stderr, 0)
@@ -81,8 +33,8 @@ FATAL = (3, "FATAL", sys.stderr, 0)
 CONT = lambda level: (level[0], "...", level[2], 2) # for line continuations
 
 LOGLEVEL = INFO
-LEVELS = { x[1] : x for x in (INFO, WARNING, ERROR, FATAL) }
-LEVELNAMES = [key for key in LEVELS]
+LEVELS = { x[1] : x for x in (DEBUG, INFO, WARNING, ERROR, FATAL) }
+LEVELNAMES = sorted([key for key in LEVELS], key=lambda k: LEVELS[k][0])
 PLAIN = False
 
 _maxlevelwidth = max([len(key) for key in LEVELS])
@@ -128,17 +80,19 @@ else:
     write(ERROR, "Could not detect backup folder - please use the '-b'/'--backup' option")
     DEFAULT_BACKUP_FOLDER = "?"
 
-p = argparse.ArgumentParser(description="Converts contact data from Apple iOS backups (via iTunes) to vCard format")
+p = argparse.ArgumentParser(prog="ccextract", description="Converts contact data from Apple iOS backups (via iTunes) to vCard format")
 p.add_argument("-o", "--output", help="Output folder", action="store", metavar="FOLDER", required=True)
 p.add_argument("-b", "--backup", help="iTunes backup folder (default: " + DEFAULT_BACKUP_FOLDER + ")", action="store", metavar="FOLDER", default=DEFAULT_BACKUP_FOLDER, required=require_backup_dir)
 p.add_argument("-n", "--name", help="Device name (default: choose the most recent backup). Useful if you back up more than one device", action="store", metavar="NAME")
+p.add_argument("-l", "--loglevel", help="Log level. One of " + ", ".join(LEVELNAMES) + " (default: INFO)", action="store", metavar="LEVEL", choices=LEVELNAMES, default="INFO")
 p.add_argument("--plain", help="Plain logging (generally discouraged except for automated output processing)", action="store_true")
-p.add_argument("-l", "--loglevel", help="Log level. One of " + ", ".join(LEVELNAMES) + " (default: INFO)", action="store", metavar="LEVEL", choices=LEVELNAMES, type=lambda key: LEVELS[key], default="INFO")
+p.add_argument("--version", action="version", version="%(prog)s " + VERSION + " - for more information, see the CHANGELOG file")
 # -- add options here
+
 args = p.parse_args()
 
 if (args.loglevel):
-    LOGLEVEL = args.loglevel
+    LOGLEVEL = LEVELS[args.loglevel]
 
 if (args.plain):
     PLAIN = True
@@ -199,38 +153,213 @@ contacts = {}
 # s.suffix                    # ABPerson -> Suffix
 # s.nickname                  # ABPerson -> Nickname
 # s.birthday                  # ABPerson -> Birthday
-# s.address                   # ABPersonFullTextSearch_content -> c17Address
-# s.tel                       # ABPersonFullTextSearch_content -> c15Phone
-# s.mail                      # ABPersonFullTextSearch_content -> c16Email
-# s.im                        # ABPersonFullTextSearch_content -> c21IM
+# s.address                   # via ABMultiValue
+# s.tel                       # dto.
+# s.mail                      # dto.
+# s.im                        # dto.
 # s.title                     # ABPerson -> JobTitle
 # s.org                       # ABPerson -> Organization, ABPerson -> Department
 # s.note                      # ABPerson -> Note
-# s.url                       # ABPersonFullTextSearch_content -> c19URL
- 
-for row in cursor.execute("SELECT * FROM ABPerson JOIN ABPersonFullTextSearch_content ON ABPerson.ROWID == ABPersonFullTextSearch_content.docid"):
-    c = Contact()
+# s.url                       # via ABMultiValue
+
+
+
+for row in cursor.execute("SELECT ROWID, First, Last, Middle, Prefix, Suffix, Nickname, Birthday, JobTitle, Organization, Department, Note FROM ABPerson").fetchall():
+    row_id = row["ROWID"]
     
-    res = { key : (row[key] if row[key] != None else "") for key in row.keys() }
+    lines = []
     
-    c.first_name = res["First"]
-    c.last_name = res["Last"]
-    c.middle_name = res["Middle"]
-    c.prefix = res["Prefix"]
-    c.suffix = res["Suffix"]
-    c.nickname = res["Nickname"]
-    c.birthday = res["Birthday"]
-    c.address = res["c17Address"]
-    c.tel = res["c15Phone"]
-    c.mail = res["c16Email"]
-    c.im = res["c21IM"]
-    c.title = res["JobTitle"]
-    c.org = res["Organization"] + (" - " + res["Department"] if res["Department"] else "")
-    c.note = res["Note"]
-    c.url = res["c19URL"]
+    # Metadata
+    lines.append("BEGIN:VCARD") # Start vCard
+    lines.append("VERSION:4.0") # vCard version (4.0)
+    
+    # Name
+    first_name = row["First"]
+    last_name = row["Last"]
+    middle_name = row["Middle"]
+    prefix = row["Prefix"]
+    suffix = row["Suffix"]
+    if (first_name or last_name or middle_name or prefix or suffix):
+        lines.append("N:%s;%s;%s;%s;%s" % (last_name, first_name, middle_name, prefix, suffix)) # Name
+    lines.append("FN:%s" % " ".join( x for x in (prefix, first_name, middle_name, last_name, suffix) if x )) # Formatted name (required)
+    
+    # Nickname
+    nickname = row["Nickname"]
+    if (nickname):
+        lines.append("NICKNAME:%s" % nickname.replace(",", "\\,"))
+    
+    # Birthday
+    try:
+        birthday = float(row["Birthday"])
+    except:
+        birthday = None
+    
+    if (birthday != None):
+        birthday = int(birthday) # int is OK (birthday references 12pm from the epoch on that day)
+        realdate = EPOCH + datetime.timedelta(seconds=birthday) # direct datetime.datetime.fromtimestamp does not work on dates prior to 19700101
+        lines.append("BDAY:%04d%02d%02d" % (realdate.year, realdate.month, realdate.day))
+    
+    # Title
+    title = row["JobTitle"]
+    if (title):
+        lines.append("TITLE:%s" % title.replace(",", "\\,"))
+    
+    # Organization
+    dept_raw = row["Department"]
+    org_raw = row["Organization"]
+    if (dept_raw and org_raw):
+        org = str(org_raw) + ";" + str(dept_raw)
+    elif (org_raw):
+        org = str(org_raw)
+    elif (dept_raw):
+        org = str(dept_raw)
+    else:
+        org = None
+    if (org):
+        lines.append("ORG:%s" % org.replace(",", "\\,"))
+        
+    # Note
+    note = row["Note"]
+    if (note):
+        lines.append("NOTE:%s" % note.replace(",", "\\,"))
+    
+   
+    # Get phone number / mail address / ...
+    address = []
+    im = []
+    skipped_social_media = False
+    for subrow in cursor.execute("SELECT * FROM ABMultiValue m WHERE m.record_id == ?", [str(row_id)]).fetchall():
+        # Get label ("home", "work", ...)
+        if (subrow["label"]):
+            label = cursor.execute("SELECT value FROM ABMultiValueLabel l WHERE l.rowid == ?", [str(subrow["label"])]).fetchall()
+            if (len(label) <= 0):
+                value_type = subrow["label"]
+            else:
+                value_type = label[0]["value"]
+        else:
+            value_type = ""
+        if (value_type.startswith("_$!<")):
+            value_type = value_type[4:-4].lower() # _$!<Home>!$_
+        
+        # Get value (phone numbers, ...)
+        top_value = (str(subrow["value"]) if subrow["value"] else "")
+        
+        # Check for multi-part entry (from ABMultiValueEntry)
+        entries = cursor.execute("SELECT * FROM ABMultiValueEntry e WHERE e.parent_id == ?", [str(subrow["UID"])]).fetchall() # get from Entry table (for multiple parts, eg. address)
+        
+        if (len(entries) <= 0):
+            entries = [None]
+        
+        for multivalueentry in entries:
+            value = top_value
+            if (multivalueentry):
+                value = multivalueentry["value"]
+                # Check for parts of the entry
+                sub_value_type_key = multivalueentry["key"]
+                sub_value_type_entries = cursor.execute("SELECT value FROM ABMultiValueEntryKey k WHERE k.rowid == ?", [str(sub_value_type_key)]).fetchall()
+                if (len(sub_value_type_entries) <= 0): # There are multiple parts for this key
+                    sub_value_type_entries = [{"value": ""}] # empty
+            else:
+                sub_value_type_entries = [{"value": ""}] # empty
+            
+            # For all subkeys
+            for entry in sub_value_type_entries:
+                sub_value_type = entry["value"] # Part of the field (indicator for ZIP code / State / ...)
+                
+                # Phone number
+                if (subrow["property"] == 3 and value):
+                    lines.append("TEL;TYPE=%s:%s" % (value_type, value))
+                
+                # Mail address
+                if (subrow["property"] == 4 and value):
+                    lines.append("EMAIL;TYPE=%s:%s" % (value_type, value))
+                
+                # Address
+                if (subrow["property"] == 5 and value):
+                    addr_id = int(subrow["identifier"]) # n-th address
+                    while len(address) <= addr_id:
+                        address.append([len(address) - 1, None, {}])
+                    if address[addr_id][1] == None:
+                        address[addr_id][1] = value_type
+                    address[addr_id][2][sub_value_type] = value
+                
+                # Anniversary / other date
+                try:
+                    anniv = float(value)
+                except:
+                    anniv = None
+                if (subrow["property"] == 12 and anniv != None):
+                    realdate = EPOCH + datetime.timedelta(seconds=int(anniv)) # int is OK (date references 12pm from the epoch on that day)
+                    if (value_type.lower() != "anniversary"):
+                        extra = ";TYPE=\"%s\"" % value_type
+                    else:
+                        extra = ""
+                    lines.append("ANNIVERSARY%s:%04d%02d%02d" % (extra, realdate.year, realdate.month, realdate.day))
+                
+                # IM
+                if (subrow["property"] == 13 and value):
+                    im_id = int(subrow["identifier"]) # n-th IM entry
+                    while len(im) <= im_id:
+                        im.append([len(im), None, {}])
+                    if im[im_id][1] == None:
+                        im[im_id][1] = value_type
+                    im[im_id][2][sub_value_type] = value
+                    
+                # URL
+                if (subrow["property"] == 22 and value):
+                    lines.append("URL;TYPE=%s:%s" % (value_type, value))
+                    
+                
+                # Related people
+                if (subrow["property"] == 23 and value):
+                    lines.append("RELATED;TYPE=%s;VALUE=text:%s" % (value_type, value.replace(",", "\,")))
+                
+                # Social networks et al.
+                if (subrow["property"] == 46):
+                    skipped_social_media = True # display warning later
+    
+    # Warn if social media data was skiped
+    if (skipped_social_media):
+        write(WARNING, "Could not transfer social media user information - Feature not yet supported by the vCard standard")
+    
+    # Add address
+    for addr in address:
+        try:
+            addr_id, lbl, entry = addr
+            if (lbl == None and len(entry) == 0):
+                raise ValueError("Empty address")
+        except Exception as e:
+            write(WARNING, "Left out invalid address (reason: '" + e.message + "'). Enable debug output (-l DEBUG) to get more information")
+            write(DEBUG, "Skipped: " + str(addr) + " due to error of type " + str(type(e)))
+            continue
+        vals = [ entry.get(k, "") for k in ("Apartment", "Floor", "Street", "ZIP", "City", "State", "Country") ] # Apartment and Floor will never be set, but are required for vCard
+        content = ";".join(vals)
+        lines.append("ADDR;TYPE=%s:%s" % (lbl, content))
+    
+    # Add IM
+    for im_entry in im:
+        try:
+            im_id, lbl, entry = im_entry
+            if (lbl == None and len(entry) == 0):
+                raise ValueError("Empty IM entry")
+        except Exception as e:
+            write(WARNING, "Left out invalid IM entry (reason: '" + e.message + "'). Enable debug output (-l DEBUG) to get more information")
+            write(DEBUG, "Skipped: " + str(im_entry) + " due to error of type " + str(type(e)))
+            continue
+        vals = [ entry.get(k, "") for k in ("service", "username") ] # Apartment and Floor will never be set, but are required for vCard
+        content = ":".join(vals)
+        lines.append("IMPP;TYPE=%s:%s" % (lbl, content))
+    
+    # End vCard
+    lines.append("END:VCARD")
+    
+    # Remove newlines and similar stuff from the lines
+    lines = [x.replace("\n", "\\n").replace("\r", "") for x in lines]
     
     # get filename
-    fn = ((c.first_name + " ") if c.first_name else "") + ((c.middle_name + " ") if c.middle_name else "") + (c.last_name if c.last_name else "")
+    fn = ((first_name + " ") if first_name else "") + ((middle_name + " ") if middle_name else "") + (last_name if last_name else "")
+    if (not fn):
+        fn = "UNNAMED"
     if (os.path.exists(os.path.join(output_dir, fn + ".vcf"))):
         cid = 2
         while (os.path.exists(os.path.join(output_dir, fn + " - %d" % cid + ".vcf"))):
@@ -242,5 +371,5 @@ for row in cursor.execute("SELECT * FROM ABPerson JOIN ABPersonFullTextSearch_co
     
     # write file
     with open(os.path.join(output_dir, fn), 'w') as f:
-        f.write(c.vcard())
+        f.write("\r\n".join(lines) + "\r\n")
     
