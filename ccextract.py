@@ -14,9 +14,10 @@ import plistlib
 import re
 import sqlite3 # Use the newest version possible -> this has to be a py3k tool
 import sys
+import uuid
 
 # Version number
-VERSION = "1.1"
+VERSION = "1.2"
 
 # Constants
 
@@ -49,7 +50,7 @@ def write(level, message):
             line_width = 80 - (_maxlevelwidth + level[3] + 6) # + 6 : '[', ']', 2 spaces extra indent, one space right margin and newline character
             level[2].write("[" + level[1] + "]" + " " * (2 + _maxlevelwidth - len(level[1]) + level[3]) + msg[:line_width] + "\n")
             if (len(msg) > line_width): # oversize message
-                write(CONT(level), msg[line_width:]) # write rest
+                write(CONT(level), msg[line_width:].strip()) # write rest
 
 def find_newest(path):
     objs = [os.path.join(path, x) for x in os.listdir(path)]
@@ -85,7 +86,7 @@ p.add_argument("-o", "--output", help="Output folder", action="store", metavar="
 p.add_argument("-b", "--backup", help="iTunes backup folder (default: " + DEFAULT_BACKUP_FOLDER + ")", action="store", metavar="FOLDER", default=DEFAULT_BACKUP_FOLDER, required=require_backup_dir)
 p.add_argument("-n", "--name", help="Device name (default: choose the most recent backup). Useful if you back up more than one device", action="store", metavar="NAME")
 p.add_argument("-l", "--loglevel", help="Log level. One of " + ", ".join(LEVELNAMES) + " (default: INFO)", action="store", metavar="LEVEL", choices=LEVELNAMES, default="INFO")
-p.add_argument("--plain", help="Plain logging (generally discouraged except for automated output processing)", action="store_true")
+p.add_argument("--plain", help="Plain text logging (generally discouraged except for automated output processing)", action="store_true")
 p.add_argument("--version", action="version", version="%(prog)s " + VERSION + " - for more information, see the CHANGELOG file")
 # -- add options here
 
@@ -99,12 +100,23 @@ if (args.plain):
 
 if (args.output):
     output_dir = os.path.abspath(args.output)
+    group_dir = os.path.join(output_dir, "groups")
     if (not os.path.exists(output_dir)): # output directory does not exist
         write(INFO, "Creating output directory")
         os.makedirs(output_dir)
     elif (not os.path.isdir(output_dir)): # output "directory" path does not reference a directory
         write(FATAL, "Output directory exists, but is not a directory")
         sys.exit(-1)
+    else:
+        write(WARNING, "Output directory exists - If files with the same names as chosen by ccextract exist, the new filenames will have a counter number attached")
+    if (not os.path.exists(group_dir)): # create group directory
+        write(INFO, "Creating groups directory")
+        os.makedirs(group_dir)
+    elif (not os.path.isdir(group_dir)): # group "directory" is not a directory
+        write(FATAL, "Groups directory exists, but is not a directory")
+        sys.exit(-1)
+    else:
+        write(WARNING, "Group directory exists - If files with the same names as chosen by ccextract exist, the new filenames will have a counter number attached")
 else:
     write(FATAL, "No output directory given")
     sys.exit(-1)
@@ -163,6 +175,7 @@ contacts = {}
 # s.url                       # via ABMultiValue
 
 
+uid_map = {}
 
 for row in cursor.execute("SELECT ROWID, First, Last, Middle, Prefix, Suffix, Nickname, Birthday, JobTitle, Organization, Department, Note FROM ABPerson").fetchall():
     row_id = row["ROWID"]
@@ -173,6 +186,11 @@ for row in cursor.execute("SELECT ROWID, First, Last, Middle, Prefix, Suffix, Ni
     lines.append("BEGIN:VCARD") # Start vCard
     lines.append("VERSION:4.0") # vCard version (4.0)
     
+    # UUID
+    uid = str(uuid.uuid1())
+    uid_map[row_id] = uid
+    lines.append("UID:urn:uuid:%s" % uid)
+    
     # Name
     first_name = row["First"]
     last_name = row["Last"]
@@ -181,7 +199,8 @@ for row in cursor.execute("SELECT ROWID, First, Last, Middle, Prefix, Suffix, Ni
     suffix = row["Suffix"]
     if (first_name or last_name or middle_name or prefix or suffix):
         lines.append("N:%s;%s;%s;%s;%s" % (last_name, first_name, middle_name, prefix, suffix)) # Name
-    lines.append("FN:%s" % " ".join( x for x in (prefix, first_name, middle_name, last_name, suffix) if x )) # Formatted name (required)
+    full_name = " ".join( x for x in (prefix, first_name, middle_name, last_name, suffix) if x )
+    lines.append("FN:%s" % full_name) # Formatted name (required)
     
     # Nickname
     nickname = row["Nickname"]
@@ -192,8 +211,7 @@ for row in cursor.execute("SELECT ROWID, First, Last, Middle, Prefix, Suffix, Ni
     try:
         birthday = float(row["Birthday"])
     except:
-        birthday = None
-    
+        birthday = None    
     if (birthday != None):
         birthday = int(birthday) # int is OK (birthday references 12pm from the epoch on that day)
         realdate = EPOCH + datetime.timedelta(seconds=birthday) # direct datetime.datetime.fromtimestamp does not work on dates prior to 19700101
@@ -312,6 +330,7 @@ for row in cursor.execute("SELECT ROWID, First, Last, Middle, Prefix, Suffix, Ni
                 
                 # Related people
                 if (subrow["property"] == 23 and value):
+                    # Cannot use UUIDs because the entry is not linked to the related person
                     lines.append("RELATED;TYPE=%s;VALUE=text:%s" % (value_type, value.replace(",", "\,")))
                 
                 # Social networks et al.
@@ -357,19 +376,69 @@ for row in cursor.execute("SELECT ROWID, First, Last, Middle, Prefix, Suffix, Ni
     lines = [x.replace("\n", "\\n").replace("\r", "") for x in lines]
     
     # get filename
-    fn = ((first_name + " ") if first_name else "") + ((middle_name + " ") if middle_name else "") + (last_name if last_name else "")
-    if (not fn):
-        fn = "UNNAMED"
-    if (os.path.exists(os.path.join(output_dir, fn + ".vcf"))):
+    base_fn = ((first_name + " ") if first_name else "") + ((middle_name + " ") if middle_name else "") + (last_name if last_name else "")
+    if (not base_fn):
+        base_fn = "UNNAMED"
+    fn = os.path.join(output_dir, base_fn + ".vcf")
+    if (os.path.exists(fn)):
         cid = 2
-        while (os.path.exists(os.path.join(output_dir, fn + " - %d" % cid + ".vcf"))):
+        fn = os.path.join(output_dir, base_fn + " - %d" % cid + ".vcf")
+        while (os.path.exists(fn)):
             cid += 1
-        fn += " - %d" % cid
+            fn = os.path.join(output_dir, base_fn + " - %d" % cid + ".vcf")
         
-    write(INFO, "Writing contact: %s" % fn)
+    write(INFO, "Writing contact: %s" % full_name)
     
     
     # write file
     with open(os.path.join(output_dir, fn), 'w') as f:
         f.write("\r\n".join(lines) + "\r\n")
     
+# Groups
+for row in cursor.execute("SELECT ROWID, Name FROM ABGroup").fetchall():
+    lines = []
+    
+    group_id = str(row["ROWID"])
+    
+    # Begin vCard
+    lines.append("BEGIN:VCARD")
+    lines.append("VERSION:4.0")
+    
+    # Group
+    lines.append("KIND:group")
+    
+    # Group name
+    name = row["Name"]
+    if (not name):
+        write(ERROR, "Cannot write an unnamed group")
+        continue
+    lines.append("FN:%s" % str(name))
+    
+    # Group members
+    for member in cursor.execute("SELECT member_id FROM ABGroupMembers WHERE group_id == ?", group_id).fetchall():
+        lines.append("MEMBER:urn:uuid:%s" % uid_map[member["member_id"]])
+    
+    # End vCard
+    lines.append("END:VCARD")
+    
+    # Remove newlines and similar stuff from the lines
+    lines = [x.replace("\n", "\\n").replace("\r", "") for x in lines]
+    
+    # Get filename
+    base_fn = str(name)
+    if (not base_fn):
+        base_fn = "UNNAMED"
+    fn = base_fn + ".vcf"
+    if (os.path.exists(os.path.join(group_dir, fn))):
+        cid = 2
+        fn = os.path.join(group_dir, base_fn + " - %d" % cid + ".vcf")
+        while (os.path.exists(fn)):
+            cid += 1
+            fn = os.path.join(group_dir, base_fn + " - %d" % cid + ".vcf")
+        
+    write(INFO, "Writing group: %s" % str(name))
+    
+    
+    # write file
+    with open(os.path.join(group_dir, fn), 'w') as f:
+        f.write("\r\n".join(lines) + "\r\n")
