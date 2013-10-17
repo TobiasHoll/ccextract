@@ -82,7 +82,7 @@ else:
     DEFAULT_BACKUP_FOLDER = "?"
 
 p = argparse.ArgumentParser(prog="ccextract", description="Converts contact data from Apple iOS backups (via iTunes) to vCard format")
-p.add_argument("-o", "--output", help="Output folder", action="store", metavar="FOLDER", required=True)
+p.add_argument("-o", "--output", help="Output folder (default: " + os.path.join(".", "extracted") + ")", action="store", metavar="FOLDER", default=os.path.join(os.getcwd(), "extracted"))
 p.add_argument("-b", "--backup", help="iTunes backup folder (default: " + DEFAULT_BACKUP_FOLDER + ")", action="store", metavar="FOLDER", default=DEFAULT_BACKUP_FOLDER, required=require_backup_dir)
 p.add_argument("-n", "--name", help="Device name (default: choose the most recent backup). Useful if you back up more than one device", action="store", metavar="NAME")
 p.add_argument("-l", "--loglevel", help="Log level. One of " + ", ".join(LEVELNAMES) + " (default: INFO)", action="store", metavar="LEVEL", choices=LEVELNAMES, default="INFO")

@@ -1,5 +1,10 @@
                                    CHANGELOG                                   
 
+1.2.1                                                               (17.10.2013)
+    - Made the -o/--output argument optional (now by default creating a folder
+        "extracted" in the current folder). This facilitates usage by people not
+        so experienced with command line software
+
 1.2                                                                 (17.10.2013)
     - Now supports contact groups
     - Gives each contact a "unique" UUID
